@@ -245,13 +245,13 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
   y += 5;
 
   /* ── le panneau des photos ─────────────────────────────────
-     Chaque produit prend sa carte : pastille nom à l'orange
-     profond, dimensions SOUS la pastille quand le catalogue
-     les porte, photo en dessous — bornée à 120mm pour que
-     la pièce garde sa taille à portée d'œil dans une case
-     pleine largeur. Le cadre pointillé est posé PAR PAGE
-     occupée — un cadre unique d'une page de plus tirerait
-     jusqu'à la suivante. */
+     Chaque produit prend une CARTE à deux colonnes, la même
+     tenue que le modèle : la photo à gauche dans sa case
+     carrée — une photo portrait y tient à sa vraie hauteur,
+     une paysage traverse — et à droite le nom, les
+     dimensions du catalogue, la couleur. Le cadre pointillé
+     est posé PAR PAGE occupée — un cadre unique d'une page
+     de plus tirerait jusqu'à la suivante. */
   const slots: PhotoSlot[] = [];
   const segments: PanelSegment[] = [];
   let page = pageOf();
@@ -261,8 +261,10 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
   for (const it of q.items) {
     const chipH = 6;
     const dims = (it.dimensions || "").trim();
-    const PH = 52;
-    if (y + PH + 6 > 280) {
+    const photoW = 62;
+    const photoH = 50;
+    const cardH = chipH + 3.5 + photoH + 7;
+    if (y + cardH > 278) {
       /* la page est pleine : le segment courant se ferme là,
          AVANT d'ouvrir la page neuve — sinon ses bornes
          suivraient y de la page 2 */
@@ -290,33 +292,46 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
       doc.text(`× ${it.quantity}`, RIGHT, y + chipH - 1.8, { align: "right" });
     }
 
-    const dimsY = y + chipH + 3.8;
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(INK);
-    doc.setFontSize(10.5);
-    if (dims) doc.text(dims, LEFT + 1, dimsY);
-
-    /* la case photo, crème et bordée, sous la pastille */
-    const boxTop = y + chipH + (dims ? 5.5 : 2.5);
-    const boxH = y + PH - boxTop;
+    /* la photo à gauche, dans sa vraie case — crème bordée */
+    const photoTop = y + chipH + 3.5;
     doc.setFillColor(PAPER);
     doc.setDrawColor(LINE);
     doc.setLineWidth(0.4);
-    doc.roundedRect(LEFT, boxTop, RIGHT - LEFT, boxH, 4, 4, "FD");
-
+    doc.roundedRect(LEFT, photoTop, photoW, photoH, 4, 4, "FD");
     if (it.image) {
       slots.push({
         page,
-        box: [LEFT + 4, boxTop + 2, RIGHT - LEFT - 8, boxH - 4],
+        box: [LEFT + 3, photoTop + 2, photoW - 6, photoH - 4],
         src: it.image,
       });
     } else {
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK_SOFT);
-      doc.setFontSize(9);
-      doc.text("Vue du produit sur decoration-meuble.vercel.app", MID, boxTop + boxH / 2 + 1, { align: "center" });
+      doc.setFontSize(8.5);
+      doc.text("Vue du produit", LEFT + photoW / 2, photoTop + photoH / 2, {
+        align: "center",
+      });
     }
-    y = boxTop + boxH + 7;
+
+    /* à droite de la photo : dimensions, puis couleur et réf */
+    const tx = LEFT + photoW + 7;
+    let ty = photoTop + 5.5;
+    doc.setFont("helvetica", "normal");
+    if (dims) {
+      doc.setFontSize(11);
+      doc.setTextColor(INK);
+      doc.text(doc.splitTextToSize(dims, RIGHT - tx), tx, ty);
+    }
+    doc.setFontSize(10);
+    doc.setTextColor(INK);
+    ty += dims ? 7.5 : 0;
+    doc.text(`Couleur : ${it.color}`, tx, ty);
+    ty += 5.4;
+    doc.setTextColor(INK_SOFT);
+    doc.setFontSize(9);
+    doc.text(`Réf. ${it.ref}`, tx, ty);
+
+    y = photoTop + photoH + 7;
     seg.bottom = y - 2;
   }
   segments.push(seg);
@@ -338,7 +353,7 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
     const photo = await loadPhoto(slot.src);
     if (!photo) continue;
     doc.setPage(slot.page);
-    placeContained(doc, photo.data, photo.ratio, ...slot.box, 120);
+    placeContained(doc, photo.data, photo.ratio, ...slot.box);
   }
   doc.setPage(segments[segments.length - 1].page);
   y = segments[segments.length - 1].bottom;
