@@ -53,6 +53,9 @@ export interface OrderItem {
   ref: string;
   name: string;
   image?: string;
+  /* libellé du produit, repris du catalogue au calcul du
+     devis — la pièce du PDF le pose sous la photo */
+  dimensions?: string;
   color: string;
   unitPrice: number;
   quantity: number;

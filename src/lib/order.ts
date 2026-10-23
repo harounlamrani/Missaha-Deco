@@ -68,6 +68,7 @@ export function validateAndPriceOrder(
       ref: product.ref,
       name: product.name,
       image: product.images[0]?.src,
+      dimensions: product.dimensions ?? "",
       color: color.name,
       unitPrice: effectivePrice(product),
       quantity: qty,
