@@ -2,25 +2,33 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Heart } from "lucide-react";
-import { SHOTS } from "@/data/carousel";
 
-/* ── la barre de réactions, sous la carrousel ──────────────
-   Un compteur par image, tenu côté serveur dans
-   data/reactions.json : chaque client reçoit les mêmes
-   nombres au chargement, et les relit toutes les 12 s — et à
-   chaque retour d'onglet — pour que le total reste vivant
-   sans que rien ne bouge tant que personne n'agit.
+/* ── la barre d'émotions, sous la carrousel ────────────────
+   Trois emojis — cœur, fusée, feu — que TOUTE la galerie
+   partage : un total par emoji, tenu côté serveur, lu à
+   l'arrivée et relu toutes les douze secondes, pour que le
+   nombre que vous voyez soit le même que celui des autres.
 
-   La réaction de CE client est parti en POST avec un
-   incrément optimiste : le cœur se remplit tout de suite, et
-   le nombre affiché est remplacé par la réponse du serveur,
-   qui fait foi. Si l'enregistrement échoue (hébergement sans
-   persistance), l'incrément s'efface et le micro-message le
-   dit — mieux qu'un compteur qui triche. */
+   Un clic réagit ; un second clic retire sa réaction — le
+   compteur descend d'un, la marque part. Chaque pilule se
+   remplit chez soi : la marque locale dit « la réaction est
+   la mienne », le nombre, lui, est celui de tout le monde.
 
-const MARK_KEY = "ms_reacted";
+   L'incrément est optimiste, puis remplacé par la réponse du
+   serveur, qui seule fait foi. Un échec d'enregistrement
+   (hébergement sans persistance) remet son compteur et sa
+   marque en place et le micro-message le dit. */
+
 const POLL_MS = 12000;
+const MARK_KEY = "ms_reacted_emoji";
+
+type Reaction = { id: string; emoji: string; label: string };
+
+const REACTIONS: Reaction[] = [
+  { id: "heart", emoji: "❤️", label: "J'adore" },
+  { id: "rocket", emoji: "🚀", label: "Ça décolle" },
+  { id: "fire", emoji: "🔥", label: "Génial" },
+];
 
 const readMarks = (): string[] => {
   try {
@@ -47,7 +55,9 @@ export function CarouselReactions() {
   const alive = useRef(true);
   const still = useReducedMotion();
 
-  /* les compteurs du serveur, une fois puis par rafales */
+  /* les compteurs du serveur, au chargement puis à chaque
+     rafale de douze secondes — et à chaque retour d'onglet,
+     pour que la galerie s'anime dès qu'on la re-regarde */
   const pull = useCallback(async () => {
     try {
       const res = await fetch("/api/reactions", { cache: "no-store" });
@@ -84,120 +94,102 @@ export function CarouselReactions() {
     };
   }, [pull]);
 
-  const react = async (id: string) => {
-    /* une seule réaction par client et par image : la marque
-       locale refere le clic et le cœur ne se remplit qu'une
-       fois — le compteur, lui, est à tout le monde */
-    if (marks.has(id)) return;
+  const react = (id: string) => {
+    const mine = marks.has(id);
+    const dir: 1 | -1 = mine ? -1 : 1;
 
-    /* l'incrément optimiste, puis le remplacement par la
-       réponse du serveur qui seul fait foi */
-    setCounts((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
+    /* l'optimisme d'abord : le compteur bouge tout de suite,
+       la marque suit — le serveur remplacera le nombre par
+       le sien, qui seul fait foi */
+    setCounts((c) => ({ ...c, [id]: Math.max(0, (c[id] ?? 0) + dir) }));
     const next = new Set(marks);
-    next.add(id);
+    if (mine) next.delete(id);
+    else next.add(id);
     setMarks(next);
     writeMarks(Array.from(next));
-    try {
-      const res = await fetch("/api/reactions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id }),
+
+    fetch("/api/reactions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id, dir }),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("save failed");
+        const data = (await res.json()) as { count: number };
+        if (!alive.current) return;
+        setCounts((c) => ({ ...c, [id]: data.count }));
+        setError(false);
+      })
+      .catch(() => {
+        if (!alive.current) return;
+        /* l'enregistrement est refusé : le nombre recule et
+           la marque se retire, la réaction n'a pas eu lieu */
+        setCounts((c) => ({ ...c, [id]: Math.max(0, (c[id] ?? 0) - dir) }));
+        const back = new Set(marks);
+        if (mine) back.add(id);
+        else back.delete(id);
+        setMarks(back);
+        writeMarks(Array.from(back));
+        setError(true);
       });
-      if (!res.ok) throw new Error("save failed");
-      const data = (await res.json()) as { count: number };
-      if (!alive.current) return;
-      setCounts((c) => ({ ...c, [id]: data.count }));
-      setError(false);
-      /* les autres clients liront le nouveau total à la
-         prochaine rafale, peut-être avant leur clic à eux */
-      pull();
-    } catch {
-      if (!alive.current) return;
-      /* l'enregistrement est refusé : le nombre recule d'un et
-         la marque se retire, la réaction n'a pas eu lieu */
-      setCounts((c) => ({ ...c, [id]: Math.max(0, (c[id] ?? 1) - 1) }));
-      const back = new Set(marks);
-      back.delete(id);
-      setMarks(back);
-      writeMarks(Array.from(back));
-      setError(true);
-    }
   };
 
+  /* ── le pop ────────────────────────────────────────────────
+      Un REMOUNT (le key change avec la marque), pas un
+      animate : un animate rejouerait ses keyframes à chaque
+      rendu où les compteurs arrivent du serveur, et les
+      emojis palseraient tout seuls pendant que personne
+      n'agit. */
   return (
     <div className="car-react">
-      <h2 className="sr-only">Réagir aux photos de la galerie</h2>
-      <ul className="car-react-row">
-        {SHOTS.map((shot) => {
-          const count = counts[shot.name] ?? 0;
-          const mine = marks.has(shot.name);
+      <h2 className="sr-only">Réagir à la galerie</h2>
+      <div className="car-react-row" role="group" aria-label="Réactions">
+        {REACTIONS.map((reaction) => {
+          const count = counts[reaction.id] ?? 0;
+          const mine = marks.has(reaction.id);
           return (
-            <li key={shot.name} className="car-react-chip">
-              <img
-                className="car-react-thumb"
-                src={shot.src}
-                alt=""
-                width={44}
-                height={44}
-                draggable={false}
-                loading="lazy"
-              />
-              <motion.button
-                type="button"
-                className="car-react-btn"
-                data-mine={mine}
-                onClick={() => react(shot.name)}
-                whileTap={still ? undefined : { scale: 0.82 }}
-                aria-label={`Réagir à la photo ${shot.name}`}
-                aria-live="polite"
+            <motion.button
+              type="button"
+              key={reaction.id}
+              className="car-react-pill"
+              data-mine={mine}
+              onClick={() => react(reaction.id)}
+              whileTap={still ? undefined : { scale: 0.86 }}
+              aria-pressed={mine}
+              aria-label={`${reaction.emoji} ${reaction.label}`}
+              aria-live="polite"
+            >
+              <motion.span
+                key={mine ? "on" : "off"}
+                className="car-react-emoji"
+                initial={
+                  mine && !still
+                    ? { scale: 0.4, rotate: -14 }
+                    : { scale: 1, rotate: 0 }
+                }
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: "spring", stiffness: 520, damping: 17 }}
               >
-                {/* le pop est un REMOUNT (le key change avec la
-                    marque), pas un animate : un animate rejouerait
-                    les keyframes à chaque rendu où les compteurs
-                    arrivent du serveur, et le cœur palserait tout
-                    seul pendant que personne n'agit */}
-                <motion.span
-                  key={mine ? "on" : "off"}
-                  className="car-react-heart"
-                  initial={
-                    mine && !still
-                      ? { scale: 0.5, rotate: -10 }
-                      : { scale: 1, rotate: 0 }
-                  }
-                  animate={{ scale: 1, rotate: 0 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 520,
-                    damping: 17,
-                  }}
-                >
-                  <Heart
-                    size={17}
-                    strokeWidth={mine ? 2.4 : 2}
-                    fill={mine ? "currentColor" : "none"}
-                  />
-                </motion.span>
-                <span className="car-react-count">
-                  <AnimatePresence initial={false} mode="popLayout">
-                    <motion.span
-                      key={count}
-                      initial={loaded && !still ? { y: 7, opacity: 0 } : false}
-                      animate={{ y: 0, opacity: 1 }}
-                      exit={
-                        loaded && !still ? { y: -7, opacity: 0 } : undefined
-                      }
-                      transition={{ duration: 0.22, ease: "easeOut" }}
-                      className="car-react-num"
-                    >
-                      {loaded || count > 0 ? count : "—"}
-                    </motion.span>
-                  </AnimatePresence>
-                </span>
-              </motion.button>
-            </li>
+                {reaction.emoji}
+              </motion.span>
+              <span className="car-react-count">
+                <AnimatePresence initial={false} mode="popLayout">
+                  <motion.span
+                    key={count}
+                    initial={loaded && !still ? { y: 8, opacity: 0 } : false}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={loaded && !still ? { y: -8, opacity: 0 } : undefined}
+                    transition={{ duration: 0.22, ease: "easeOut" }}
+                    className="car-react-num"
+                  >
+                    {count}
+                  </motion.span>
+                </AnimatePresence>
+              </span>
+            </motion.button>
           );
         })}
-      </ul>
+      </div>
       <AnimatePresence>
         {error && (
           <motion.p

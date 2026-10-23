@@ -3,6 +3,12 @@ import path from "path";
 import { neon } from "@neondatabase/serverless";
 
 /* ── les compteurs de réactions ─────────────────────────────
+   Un compteur par ÉMOJI, pas par photo : la galerie entière
+   partage ses trois TOTALS (cœur, fusée, feu), que la barre
+   affiche sous la carrousel. Les clés sont les identifiants
+   des emojis ("heart", "rocket", "fire"), tenus d'un côté par
+   route.ts, de l'autre par la barre.
+
    Deux rangements, un seul contrat :
 
    - sur Vercel (production), le système de fichiers est en
@@ -12,15 +18,14 @@ import { neon } from "@neondatabase/serverless";
      l'intégration — DATABASE_URL est le défaut de Neon,
      POSTGRES_URL le classique de Vercel, STORAGE_URL celui
      proposé sur l'écran de branchement.
-   - sur un poste de développement (npm run dev), où aucune
-     variable n'existe, chaque écriture passe par
-     data/reactions.json — le rangement historique, qui reste
-     la vérité quand la base n'est pas branchée.
+   - sur un poste de développement (npm run dev), aucune
+     variable n'existe : chaque écriture passe par
+     data/reactions.json.
 
    Dans les deux cas le contrat est le même : lire tous les
-   compteurs, en monter un de un, et rendre la table complète
-   après l'écriture — la réponse du POST est le fait du
-   serveur, jamais l'optimisme du client. */
+   compteurs, appliquer un ±1 demandé, et rendre la table
+   complète après l'écriture — la réponse du POST est le fait
+   du serveur, jamais l'optimisme du client. */
 
 const connectionUrl =
   process.env.STORAGE_URL ??
@@ -35,30 +40,45 @@ const REACTIONS_FILE = path.join(DATA_DIR, "reactions.json");
 
 export type ReactionCounts = Record<string, number>;
 
-/* la table est créée à la première écriture, jamais à chaque
-   requête : un CREATE IF NOT EXISTS par pageload coûterait un
-   aller-retour pour rien */
+/* la table est prête à la première écriture, jamais à chaque
+   requête : un DDL par pageload coûterait un aller-retour
+   pour rien */
 let tableReady = false;
 
-/* le driver NeON ne peut être appelé qu'en gabarit, et ses
-   lignes reviennent sans type : chaque SELECT en fait ses
-   colonnes ici, une fois */
+/* la colonne s'appelle KEY; la première version de la table
+   (des compteurs par image) la nommait IMAGE — renommée une
+   fois ici, les données d'alors étant des pages d'essai */
+async function ensureTable() {
+  if (!sql || tableReady) return;
+  try {
+    await sql`ALTER TABLE reactions RENAME COLUMN image TO key`;
+  } catch {
+    /* pas de colonne image : table neuve, ou déjà renommée */
+  }
+  await sql`CREATE TABLE IF NOT EXISTS reactions (key TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0)`;
+  tableReady = true;
+}
+
+/* le driver Neon ne s'appelle qu'en gabarit et rend des
+   lignes sans type : chaque SELECT passe sous la forme
+   voulue ici, une fois */
 const asCounts = (rows: Record<string, unknown>[]) =>
   Object.fromEntries(
     rows
-      .map((r) => [String(r.image), Math.max(0, Number(r.count))])
+      .map((r) => [String(r.key), Math.max(0, Math.trunc(Number(r.count)))])
       .filter(([, v]) => Number.isFinite(v) && (v as number) >= 0),
   ) as ReactionCounts;
 
 /* ── lire ──────────────────────────────────────────────────
-   La base d'abord ; si elle est injoignable (startup de Neon
-   à froid, réseau), le fichier garde sa place — et sans
-   fichier du tout, la table vide. */
+   La base d'abord ; si elle est injoignable (mise en route à
+   froid de Neon, réseau), le fichier garde sa place — et
+   sans fichier du tout, la table vide. */
 export async function readReactions(): Promise<ReactionCounts> {
   if (sql) {
     try {
+      await ensureTable();
       const rows =
-        (await sql`SELECT image, count FROM reactions`) as Record<
+        (await sql`SELECT key, count FROM reactions`) as Record<
           string,
           unknown
         >[];
@@ -81,25 +101,25 @@ export async function readReactions(): Promise<ReactionCounts> {
   }
 }
 
-export async function bumpReaction(id: string): Promise<ReactionCounts> {
+/* dir vaut +1 (réagir) ou -1 (retirer sa réaction) : le
+   serveur borne le compteur à zéro, peu importe ce que
+   demande le client */
+export async function bumpReaction(
+  id: string,
+  dir: 1 | -1,
+): Promise<ReactionCounts> {
   if (sql) {
-    if (!tableReady) {
-      await sql`CREATE TABLE IF NOT EXISTS reactions (image TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0)`;
-      tableReady = true;
-    }
-    /* l'upsert rapporte le seul compteur qui bouge : la
-       lecture complète d'après donne le tableau entier, de
-       quoi répondre au POST avec le fait du serveur */
-    await sql`INSERT INTO reactions (image, count) VALUES (${id}, 1) ON CONFLICT (image) DO UPDATE SET count = reactions.count + 1`;
+    await ensureTable();
+    await sql`INSERT INTO reactions (key, count) VALUES (${id}, 1) ON CONFLICT (key) DO UPDATE SET count = GREATEST(reactions.count + ${dir}, 0)`;
     const rows =
-      (await sql`SELECT image, count FROM reactions`) as Record<
+      (await sql`SELECT key, count FROM reactions`) as Record<
         string,
         unknown
       >[];
     return asCounts(rows);
   }
   const counts = await readReactions();
-  counts[id] = (counts[id] ?? 0) + 1;
+  counts[id] = Math.max(0, (counts[id] ?? 0) + dir);
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.writeFile(REACTIONS_FILE, JSON.stringify(counts, null, 2), "utf-8");
   return counts;

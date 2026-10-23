@@ -1,16 +1,10 @@
 /* ── les images de la carrousel ────────────────────────────
-   La source unique de la liste : le Carousel la dessine et la
-   barre de réactions la compte. Elle vit ici, hors de tout
-   composant, parce qu'une route serveur la lit aussi —
+   La source unique de la liste : le Carousel la dessine. Elle
+   vit ici, hors de tout composant, pour rester lisible par un
+   module serveur si un jour un de ses modules la reprend —
    importer le fichier du Carousel depuis une route, c'est
    attraper ses hooks dans un module serveur et le build le
-   refuse.
-
-   Les noms servent d'identifiants aux compteurs de réactions
-   (clés de data/reactions.json), pas seulement de légendes :
-   renommer un fichier déplace son compteur avec lui, ce qui
-   est honnête — le compteur appartient à l'image, pas à sa
-   position dans la liste. */
+   refuse. */
 export const SHOTS: { name: string; src: string }[] = [
   { name: "1", src: "/images/carousel/1.webp" },
   { name: "2", src: "/images/carousel/2.webp" },

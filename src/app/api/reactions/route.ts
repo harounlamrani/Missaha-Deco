@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { SHOTS } from "@/data/carousel";
 import { bumpReaction, readReactions } from "@/lib/server-reactions";
 
-/* Les identifiants acceptés sont les noms des images du carrousel :
-   rien d'autre n'écrit dans data/reactions.json. */
-const NAMES = new Set(SHOTS.map((s) => s.name));
+/* Les identifiants acceptés sont les trois emojis de la barre,
+   partagés par toute la galerie — rien d'autre n'écrit dans
+   la base. */
+const EMOJI_IDS = new Set(["heart", "rocket", "fire"]);
 
 export async function GET() {
   const reactions = await readReactions();
@@ -15,19 +15,21 @@ export async function GET() {
 
 export async function POST(request: Request) {
   let id = "";
+  let dir: 1 | -1 = 1;
   try {
-    const body = (await request.json()) as { id?: unknown };
+    const body = (await request.json()) as { id?: unknown; dir?: unknown };
     id = typeof body.id === "string" ? body.id : "";
+    dir = body.dir === -1 ? -1 : 1;
   } catch {
-    // corps illisible : traité comme vide
+    /* corps illisible : traité comme vide */
   }
-  if (!NAMES.has(id)) {
-    return NextResponse.json({ error: "unknown image" }, { status: 400 });
+  if (!EMOJI_IDS.has(id)) {
+    return NextResponse.json({ error: "unknown reaction" }, { status: 400 });
   }
   try {
-    const reactions = await bumpReaction(id);
+    const reactions = await bumpReaction(id, dir);
     return NextResponse.json(
-      { id, count: reactions[id] ?? 1, reactions },
+      { id, count: reactions[id] ?? 0, reactions },
       { headers: { "cache-control": "no-store" } },
     );
   } catch {

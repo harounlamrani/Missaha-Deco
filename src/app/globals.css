@@ -319,19 +319,22 @@ body {
   opacity: 1;}
 
 /* ── the reactions, and the numbers are not a decoration ────
-   One counter per picture, held server-side in
-   data/reactions.json, read back by every client and re-read
-   every twelve seconds — so the total is the SAME column of
-   numbers whoever is looking, which is the whole point of
-   keeping them.
+   Three emojis — heart, rocket, fire — that the WHOLE gallery
+   shares: one counter per emoji, held server-side in
+   data/reactions.json (or, on Vercel, in Postgres), read back
+   by every client and re-read every twelve seconds — so the
+   column of numbers is the same one whoever is looking,
+   which is the whole point of keeping them.
 
-   The row sits under the stage and is padded to the stage's
-   VISUAL width, not its box one: the stage is scaled (1.18 on
-   a desktop) and a row measured on the box would hang wider
-   than the picture above it. 561 = 476 x 1.18, the shipping
-   width, rounded the way one rounds a row of chips. The chips
-   stay small on their own — 44px thumbs — because the row is
-   a footnote to the ring, not a second carousel. */
+   The row sits under the stage and is padded within the
+   stage's visual width, not its box one: the stage is scaled
+   (1.18 on a desktop) and a row measured on the box would
+   hang wider than the picture above it.
+
+   The pill is a button: first click reacts, second click
+   takes it back. A pill of one's own keeps a wash of the
+   brand yellow — the marks are local, the COUNTS are for
+   everyone. */
 .car-react {
   display: flex;
   flex-direction: column;
@@ -342,55 +345,42 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  list-style: none;
-  margin: 0;
-  padding: 6px 14px;
-  background: var(--color-paper);
-  border: 1px solid var(--color-line);
-  border-radius: 999px;
-  box-shadow: 0 10px 24px -18px rgba(var(--shadow-rgb), 0.5);}
-.car-react-chip {
-  display: flex;
-  align-items: center;
-  gap: 4px;}
-.car-react-thumb {
-  display: block;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  object-fit: cover;
-  background: var(--color-line);
-  user-select: none;
-  -webkit-user-drag: none;}
-.car-react-btn {
+  gap: 10px;}
+.car-react-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 6px 8px;
-  border: 0;
+  gap: 7px;
+  padding: 8px 15px;
+  border: 1px solid var(--color-line);
   border-radius: 999px;
-  background: transparent;
+  background: var(--color-paper);
   color: var(--color-ink-soft);
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;}
-.car-react-btn:hover {
-  color: var(--color-brand-orange-deep);
-  background: var(--color-brand-yellow-soft);}
-.car-react-btn[data-mine="true"] {
-  color: var(--color-brand-orange);}
-.car-react-btn:focus-visible {
+  box-shadow: 0 10px 24px -18px rgba(var(--shadow-rgb), 0.55);
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.18s ease, border-color 0.18s ease,
+    transform 0.18s ease;}
+.car-react-pill:hover {
+  transform: translateY(-1px);
+  border-color: var(--color-brand-yellow);}
+.car-react-pill[data-mine="true"] {
+  background: var(--color-brand-yellow-soft);
+  border-color: var(--color-brand-yellow);
+  color: var(--color-brand-orange-deep);}
+.car-react-pill:focus-visible {
   outline: 2px solid var(--color-brand-orange-deep);
   outline-offset: 2px;}
-.car-react-heart {
+.car-react-emoji {
   display: inline-grid;
   place-items: center;
+  font-size: 19px;
+  line-height: 1;
   will-change: transform;}
 .car-react-count {
-  min-width: 1.4em;
+  min-width: 1.2em;
   overflow: hidden;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;}
 .car-react-num {
   display: inline-block;}
@@ -399,15 +389,17 @@ body {
   font-size: 12px;
   color: var(--color-brand-orange-deep);}
 @media (max-width: 529px) {
+  .car-react {
+    margin-top: 20px;}
   .car-react-row {
-    gap: 8px;
-    padding: 5px 10px;}
-  .car-react-thumb {
-    width: 38px;
-    height: 38px;}
-  .car-react-btn {
-    padding: 5px 6px;
-    gap: 4px;}}
+    gap: 8px;}
+  .car-react-pill {
+    padding: 7px 12px;
+    gap: 5px;}
+  .car-react-emoji {
+    font-size: 17px;}}
 @media (prefers-reduced-motion: reduce) {
-  .car-react-heart, .car-react-num {
+  .car-react-pill {
+    transition: none;}
+  .car-react-emoji, .car-react-num {
     animation: none;}}
