@@ -1,11 +1,18 @@
 import type { Quote } from "./types";
 import { formatDA } from "./format";
 import { SITE } from "./site";
+import type { jsPDF } from "jspdf";
 
 /**
  * Génère un vrai PDF téléchargeable (jsPDF, import dynamique côté client).
  * Mise en page sobre, lisible sur téléphone et à l'impression.
  * Logo : image réelle /logo.jpg si accessible, sinon logotype texte.
+ *
+ * La mise en page est construite dans buildQuotePdf et sert DEUX
+ * sorties : le téléchargement direct (downloadQuotePdf) et
+ * l'hébergement (quotePdfDataUrl) — le PDF monté sur le serveur
+ * voit son URL partir dans le message WhatsApp, ce qui supprime
+ * la jointure manuelle.
  */
 async function loadLogoDataUrl(): Promise<string | null> {
   try {
@@ -23,7 +30,7 @@ async function loadLogoDataUrl(): Promise<string | null> {
   }
 }
 
-export async function downloadQuotePdf(q: Quote): Promise<void> {
+async function buildQuotePdf(q: Quote): Promise<jsPDF> {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
 
@@ -142,5 +149,17 @@ export async function downloadQuotePdf(q: Quote): Promise<void> {
   doc.setFontSize(10);
   doc.text(SITE.paymentNote, left, y);
 
+  return doc;
+}
+
+/** Le même document, rendu en data-URL (application/pdf) */
+export async function quotePdfDataUrl(q: Quote): Promise<string> {
+  const doc = await buildQuotePdf(q);
+  return doc.output("dataurlstring") as string;
+}
+
+/** Le téléchargement direct, inchangé pour le client */
+export async function downloadQuotePdf(q: Quote): Promise<void> {
+  const doc = await buildQuotePdf(q);
   doc.save(`devis-${q.number}.pdf`);
 }

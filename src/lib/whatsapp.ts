@@ -2,7 +2,7 @@ import type { Quote } from "./types";
 import { formatDA } from "./format";
 import { SITE, waLink } from "./site";
 
-export function buildWhatsAppMessage(q: Quote): string {
+export function buildWhatsAppMessage(q: Quote, pdfUrl?: string): string {
   const lines: string[] = [];
   lines.push(`Bonjour ${SITE.brandDisplay}, je souhaite confirmer ma commande.`);
   lines.push("");
@@ -24,11 +24,19 @@ export function buildWhatsAppMessage(q: Quote): string {
     `Livraison (${q.deliveryMethod === "domicile" ? "domicile" : "bureau"}) : ${formatDA(q.deliveryPrice)}`,
   );
   lines.push(`Total à payer à la livraison : ${formatDA(q.total)}`);
+  if (pdfUrl) {
+    lines.push("");
+    /* un LIEN, pas une pièce jointe : wa.me ne sait pas
+       transporter de fichier, mais ce lien, ouvert depuis la
+       conversation, affiche le devis complet — la jointure
+       manuelle avec le trombone n'est plus nécessaire */
+    lines.push(`Devis PDF : ${pdfUrl}`);
+  }
   lines.push("");
   lines.push("Merci de confirmer la prise en charge de ma commande.");
   return lines.join("\n");
 }
 
-export function buildWhatsAppLink(q: Quote): string {
-  return waLink(buildWhatsAppMessage(q));
+export function buildWhatsAppLink(q: Quote, pdfUrl?: string): string {
+  return waLink(buildWhatsAppMessage(q, pdfUrl));
 }

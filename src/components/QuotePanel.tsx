@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, FileText, Loader2, MessageCircle } from "lucide-react";
 import type { Quote } from "@/lib/types";
 import { formatDA } from "@/lib/format";
-import { downloadQuotePdf } from "@/lib/pdf";
+import { downloadQuotePdf, quotePdfDataUrl } from "@/lib/pdf";
 import { buildWhatsAppLink } from "@/lib/whatsapp";
 import {
   ReceiptPrinter,
@@ -15,6 +15,14 @@ export function QuotePanel({ quote }: { quote: Quote }) {
   const [downloading, setDownloading] = useState(false);
   const [pdfError, setPdfError] = useState("");
   const [stage, setStage] = useState<ReceiptPrinterStage>("processing");
+  /* l'URL du devis monté à l'envoi ; null tant que le premier
+     envoi n'a pas eu lieu — montée une seule fois, l'URL est
+     valable toute la vie de la page */
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  /* le PDF monté ne dépend pas de la frappe : monté une fois,
+     relancé par le prochain clic seulement en cas d'échec */
+  const sent = useRef(false);
 
   useEffect(() => {
     const t0 = window.setTimeout(() => setStage("processing"), 0);
@@ -39,6 +47,49 @@ export function QuotePanel({ quote }: { quote: Quote }) {
       setPdfError("Téléchargement impossible. Réessayez.");
     } finally {
       setDownloading(false);
+    }
+  }
+
+  async function onConfirm() {
+    if (sent.current) {
+      window.open(buildWhatsAppLink(quote, pdfUrl ?? undefined), "_blank");
+      return;
+    }
+    setSending(true);
+    setPdfError("");
+    let url: string | null = null;
+    try {
+      /* le PDF part AVANT l'ouverture de la conversation :
+         son lien arrive DANS le message, le client lit son
+         devis sans passer par le trombone. Un échec de montage
+         n'arrête pas la commande — le message porte déjà tout
+         le texte de la demande de toute façon */
+      const dataUrl = await quotePdfDataUrl(quote);
+      const res = await fetch("/api/quotes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ number: quote.number, pdf: dataUrl }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { url?: string };
+        if (data.url) {
+          /* l'ORIGINE du site, pas une constante : le lien est
+             valable en local, en aperçu et en production */
+          url = `${window.location.origin}${data.url}`;
+          setPdfUrl(url);
+          sent.current = true;
+        }
+      }
+      window.open(buildWhatsAppLink(quote, url ?? undefined), "_blank");
+    } catch {
+      /* montage impossible : WhatsApp s'ouvre quand même,
+         avec son message complet et sans lien PDF */
+      window.open(buildWhatsAppLink(quote), "_blank");
+      setPdfError(
+        "Le devis n'a pas pu être joint au message WhatsApp : il reste téléchargeable ci-dessus, à joindre avec le trombone.",
+      );
+    } finally {
+      setSending(false);
     }
   }
 
@@ -167,18 +218,25 @@ export function QuotePanel({ quote }: { quote: Quote }) {
         {pdfError && (
           <p className="text-sm text-red-700" role="alert">{pdfError}</p>
         )}
-        <a
-          href={buildWhatsAppLink(quote)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-[#1faa53] px-6 py-3.5 text-base font-bold text-white transition hover:brightness-110 active:scale-[0.99]"
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={sending}
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-[#1faa53] px-6 py-3.5 text-base font-bold text-white transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60"
         >
-          <MessageCircle className="h-5 w-5" aria-hidden />
+          {sending ? (
+            <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+          ) : (
+            <MessageCircle className="h-5 w-5" aria-hidden />
+          )}
           Confirmer ma commande sur WhatsApp
-        </a>
+        </button>
+        {/* le trombone n'est plus demandé une fois le devis
+            monté : son lien voyage DANS le message WhatsApp */}
         <p className="rounded-2xl bg-brand-yellow-soft px-4 py-3 text-sm leading-6 text-ink">
-          Les liens WhatsApp ne permettent pas de joindre un fichier automatiquement :
-          téléchargez le PDF ci-dessus, puis joignez-le à votre message avec le bouton trombone.
+          {pdfUrl
+            ? "Tout est prêt : le lien de votre PDF de devis est déjà dans le message WhatsApp — vous pouvez aussi le télécharger ci-dessus pour vos archives."
+            : "En cliquant ci-dessous, votre PDF de devis est joint automatiquement au message WhatsApp : votre client l'ouvre directement depuis la conversation."}
         </p>
       </div>
     </div>
