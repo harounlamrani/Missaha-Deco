@@ -382,15 +382,39 @@ const spotOf = (i: number, turn: number, orbit: number, depth: number): Spot => 
   return {
     x: Math.sin(th) * orbit,
     y: -(1 - f) * LEAN,
-    s: mix(1 - clamp(depth, 0, DEPTH_MAX) / 200, 1, f),
+    /* ── the FRONT card is its own size ─────────────────
+       A card at the front reads bigger by an amount of its
+       own choosing, FRONTAL, and the mix that follows only
+       hands the growth out near the front: the cube of `f`
+       stays at a whisper through the sides (f ~ .65 puts
+       5% on a neighbour) and arrives whole exactly where
+       the photograph is being looked at (f = 1, the full
+       18%). The depth mix beneath is untouched — the two
+       scales multiply, so Depth 0 and a turned knob cannot
+       cancel each other; the ring keeps its recede and the
+       front keeps its face, whatever the knobs say. */
+    s:
+      mix(1 - clamp(depth, 0, DEPTH_MAX) / 200, 1, f) *
+      (1 + (FRONT_SCALE - 1) * f ** 3),
     /* ── paint order is a z-index, by hand ──────────────
-       Everything here is 2D — scale and offset, not
-       translateZ — so nothing sorts itself and a card would
-       otherwise paint in DOM order and sit over the one in
-       front of it. `f` already knows which is nearer. */
+        Everything here is 2D — scale and offset, not
+        translateZ — so nothing sorts itself and a card would
+        otherwise paint in DOM order and sit over the one in
+        front of it. `f` already knows which is nearer. */
     z: Math.round(f * 100),
   };
 };
+
+/* ── how much bigger the FRONT card is ─────────────────────
+   1.0 is the ring as it was, every card equal at its own
+   step. 1.18 puts eighteen per cent on the one card at the
+   front — the photograph being looked at — and none on the
+   sides to speak of, which is what the client asked for: at
+   rest and through every step of a swipe the card at the
+   middle reads plainly the bigger one, and cost nothing to
+   the ring's depth behind. At 245 visual the front card now
+   draws at 289 and its neighbours stay near 209. */
+const FRONT_SCALE = 1.18;
 
 const write = (el: HTMLElement, sp: Spot, angle: number) => {
   /* NO OPACITY IS WRITTEN HERE. The cards used to fade with
