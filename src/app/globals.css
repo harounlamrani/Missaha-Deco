@@ -1,0 +1,413 @@
+@import "tailwindcss";
+
+@theme {
+  /* MISSaha — blanc / jaune / orange, minimal */
+  --color-brand-yellow: #ffb703;
+  --color-brand-yellow-soft: #fff7e0;
+  --color-brand-yellow-deep: #e09e00;
+  --color-brand-orange: #fb8500;
+  --color-brand-orange-deep: #b45309;
+  --color-ink: #1c1917;
+  --color-ink-soft: #57534e;
+  --color-line: #f0e9dc;
+  --color-paper: #fffdf8;
+
+  /* Ramp monochrome pour ReceiptPrinter (sections type borne d'impression) */
+  --color-grayscale-1: #fcfcfc;
+  --color-grayscale-2: #f2f2f3;
+  --color-grayscale-3: #e4e4e6;
+  --color-grayscale-4: #d4d4d7;
+  --color-grayscale-5: #a3a3a8;
+  --color-grayscale-6: #86868b;
+  --color-grayscale-7: #6e6e73;
+  --color-grayscale-8: #58585e;
+  --color-grayscale-9: #48484d;
+  --color-grayscale-10: #3a3a3f;
+  --color-grayscale-11: #2b2b30;
+  --color-grayscale-12: #17171a;
+  --color-green-9: #15803d;
+
+  --font-sans: var(--font-inter), "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-arabic: var(--font-arabic), "Segoe UI", system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #ffffff;
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-brand-yellow);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-orange-deep);
+  outline-offset: 2px;
+}
+
+/* Entrée cinématique du hero : visuel d'abord, texte en cascade ensuite.
+   100% CSS (fonctionne même si le JavaScript échoue). */
+@keyframes hero-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hero-item {
+  opacity: 0;
+  animation: hero-item-in var(--hero-dur, 700ms) cubic-bezier(0.22, 1, 0.36, 1)
+    var(--hero-delay, 0ms) both;
+  will-change: opacity, transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-item {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Meuble du hero : part entièrement hors écran à GAUCHE puis glisse
+   vers la droite (sens confirmé), AVANT la cascade de texte (délai 0). */
+@keyframes hero-cabinet-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-115%);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.hero-slide {
+  opacity: 0;
+  animation: hero-cabinet-in 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-slide {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ══ Carousel ═══════════════════════════════════════════════
+   A row of cards that drift at rest, give under the pointer,
+   and can be thrown. Three motions on three nested elements,
+   one transform each — see the note in Carousel.tsx for why
+   they cannot share a node. */
+.car {
+  position: relative;
+  font-family: var(--font-ui);
+
+  /* Bencho's design tokens, without new globals: each maps
+     to whatever this project already uses for the same job,
+     and (failing that) hangs on the component's own root so
+     nothing can leak out.
+     --bg → the white band the ring is placed on
+     --ink-rgb / --shadow-rgb → the site ink #1c1917 as three
+     bare numbers, because the CSS builds rgba() from them
+     --font-ui → the site's sans stack
+     --lift / --sway are not fixed: the component writes them
+     per card (clamped to their 0..100 knob). */
+  --bg: #ffffff;
+  --ink-rgb: 28 25 23;
+  --shadow-rgb: 28 25 23;
+  --font-ui: var(--font-sans);
+}
+
+/* The stage is fixed-size by design (see the sizing note in
+   Carousel.tsx). On the desktop the ring is scaled up as a
+   whole, with the card constants divided by the same factor
+   so the PHOTOGRAPH keeps its original size. On a phone that
+   forces the page wide, so the ring scales down and the band
+   clips the same few pixels of air at the sides. */
+.car-fit {
+  display: flex;
+  justify-content: center;}
+@media (min-width: 530px) {
+  .car-fit .car {
+    transform: scale(1.18);
+    transform-origin: center;}}
+@media (max-width: 529px) {
+  .car-fit {
+    overflow-x: clip;}
+  .car-fit .car {
+    /* the phone version draws at 0.76 of the ORIGINAL ring;
+       against the compensated cards (÷1.18) that is
+       0.76 x 1.18 ≈ 0.897, so the front photograph stays the
+       same size as it always was */
+    transform: scale(0.897);
+    transform-origin: top center;
+    /* the box stays 340px tall while the ring draws at ~90%,
+       so the visual slack is pulled back out of the flow */
+    margin-bottom: calc(340px * -0.103);}}
+
+/* ── the frame is only a frame ─────────────────────────────
+   No background, no clip, no mask. This was a box that cut
+   the cards at its edges, and before that a mask that faded
+   them out there, and both were answers to the question of
+   what happens to a card when it runs out of block. The cards
+   are on a ring now and never reach an edge, so the question
+   is gone and so is everything that was answering it.
+
+   Which also means nothing here forces `transform-style:
+   flat` any more — overflow and mask both did, and both were
+   safe only because the perspective sits two levels down on
+   `.car-float`. It no longer has to be. */
+.car-track {
+  position: absolute;
+  inset: 0;
+  touch-action: pan-y;
+  cursor: grab;}
+
+.car-track[data-held="true"] {
+  cursor: grabbing;}
+
+/* the held grip wins over the card's zoom hint */
+.car-track[data-held="true"] .car-card {
+  cursor: grabbing;}
+
+.car-track:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px rgba(var(--ink-rgb), 0.4);}
+
+/* the slot holds WHERE on the ring and the card's own resting
+   ANGLE, written per frame by the component — so it carries no
+   transition of its own, or the easing and the drag would
+   re-interpolate against each other and what you would see is
+   the transition rather than the finger */
+.car-slot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: center;}
+
+/* ── the drift ──────────────────────────────────────────────
+   Keyframes rather than a loop: a rAF per card would be a
+   permanent loop for motion nobody is watching, and a wall
+   holding several of these blocks would run a dozen. This
+   runs on the compositor and pauses itself when the tab
+   hides. The period is set per card and deliberately does not
+   divide into its neighbours' — that is what stops the row
+   breathing in unison.
+
+   The perspective lives HERE, not on the track: on the track
+   a card at the edge of the row would tilt toward the middle
+   of the stage rather than toward the finger on it. Each card
+   is its own object being touched and wants its own vanishing
+   point. */
+.car-float {
+  width: 100%;
+  height: 100%;
+  perspective: 760px;
+  animation: car-bob 5s ease-in-out infinite;}
+
+.car-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  /* a card is a photograph you can open */
+  cursor: zoom-in;
+  /* no transition: the tilt is sprung in the component, and a
+     transition on top would be a second opinion about how this
+     card settles */}
+
+.car-sheen {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;}
+
+@media (prefers-reduced-motion: reduce) {
+  .car-float { animation: none; }
+  .car-zoom, .car-zoom-img { transition: none; }
+  .car-zoom-img { transform: none; }
+}
+
+@keyframes car-bob {
+  0%, 100% {
+    transform: translateY(calc(var(--lift, 4px) * -1)) rotate(calc(var(--sway, 1deg) * -1));
+  }
+  50% {
+    transform: translateY(var(--lift, 4px)) rotate(var(--sway, 1deg));
+  }}
+
+/* ── the zoom ───────────────────────────────────────────────
+   Click a card and the photograph opens over the page, whole
+   and uncropped, so the client can actually look inside the
+   cabinet. One overlay, two states: it fades and eases from
+   ninety-ish per cent, and clicking anywhere — or Escape —
+   puts it away. The image keeps the LAST url while the state
+   is off so the close is a fade of the same photo rather than
+   a flash to empty. */
+.car-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(28, 25, 23, 0.82);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  cursor: zoom-out;}
+
+.car-zoom[data-open="true"] {
+  opacity: 1;
+  pointer-events: auto;}
+
+.car-zoom-img {
+  max-height: 82svh;
+  max-width: 92vw;
+  border-radius: 18px;
+  box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.5);
+  transform: scale(0.9);
+  opacity: 0;
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.25s ease;
+  user-select: none;
+  -webkit-user-drag: none;}
+
+.car-zoom[data-open="true"] .car-zoom-img {
+  transform: scale(1);
+  opacity: 1;}
+
+/* ── the reactions, and the numbers are not a decoration ────
+   One counter per picture, held server-side in
+   data/reactions.json, read back by every client and re-read
+   every twelve seconds — so the total is the SAME column of
+   numbers whoever is looking, which is the whole point of
+   keeping them.
+
+   The row sits under the stage and is padded to the stage's
+   VISUAL width, not its box one: the stage is scaled (1.18 on
+   a desktop) and a row measured on the box would hang wider
+   than the picture above it. 561 = 476 x 1.18, the shipping
+   width, rounded the way one rounds a row of chips. The chips
+   stay small on their own — 44px thumbs — because the row is
+   a footnote to the ring, not a second carousel. */
+.car-react {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 26px;
+  padding: 0 16px;}
+.car-react-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  list-style: none;
+  margin: 0;
+  padding: 6px 14px;
+  background: var(--color-paper);
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  box-shadow: 0 10px 24px -18px rgba(var(--shadow-rgb), 0.5);}
+.car-react-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;}
+.car-react-thumb {
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--color-line);
+  user-select: none;
+  -webkit-user-drag: none;}
+.car-react-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-ink-soft);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;}
+.car-react-btn:hover {
+  color: var(--color-brand-orange-deep);
+  background: var(--color-brand-yellow-soft);}
+.car-react-btn[data-mine="true"] {
+  color: var(--color-brand-orange);}
+.car-react-btn:focus-visible {
+  outline: 2px solid var(--color-brand-orange-deep);
+  outline-offset: 2px;}
+.car-react-heart {
+  display: inline-grid;
+  place-items: center;
+  will-change: transform;}
+.car-react-count {
+  min-width: 1.4em;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;}
+.car-react-num {
+  display: inline-block;}
+.car-react-err {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--color-brand-orange-deep);}
+@media (max-width: 529px) {
+  .car-react-row {
+    gap: 8px;
+    padding: 5px 10px;}
+  .car-react-thumb {
+    width: 38px;
+    height: 38px;}
+  .car-react-btn {
+    padding: 5px 6px;
+    gap: 4px;}}
+@media (prefers-reduced-motion: reduce) {
+  .car-react-heart, .car-react-num {
+    animation: none;}}
