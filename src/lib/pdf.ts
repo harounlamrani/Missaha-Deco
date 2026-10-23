@@ -1,5 +1,4 @@
 import type { Quote } from "./types";
-import { formatDA } from "./format";
 import { SITE } from "./site";
 import type { jsPDF } from "jspdf";
 
@@ -30,6 +29,22 @@ const YELLOW = "#ffb703";
 const YELLOW_SOFT = "#fff7e0";
 const ORANGE_DEEP = "#b45309";
 const WHITE = "#ffffff";
+
+/* ── les formats ─────────────────────────────────────────────
+   L'Intl fr-DZ joint les milliers par un ESPACE FINE
+   (U+202F) qui n'existe pas dans les polices standardes du
+   PDF : le chiffre se rendait « 6/000 ». Les montants du
+   devis passent par leur propre format — espace ordinaire.
+   L'arabe est écarté pour la même raison : jsPDF n'écrit pas
+   de droite à gauche, l'alphabet s'en voyait inversé. */
+const pdfDA = (amount: number) =>
+  `${amount.toLocaleString("fr-FR").replace(/[\u00a0\u202f]/g, " ")} DA`;
+
+const pdfPhone = (phone: string): string => {
+  const clean = phone.replace(/[\s.\-()]/g, "");
+  const local = clean.startsWith("+213") ? `0${clean.slice(4)}` : clean;
+  return local.replace(/^(\d{4})(\d{2})(\d{2})(\d{2})$/, "$1 $2 $3 $4");
+};
 
 /* Une photo, décodée une fois : data-URL jpeg pour jsPDF,
    plus ratio naturel pour la mise à l'échelle. Le détour
@@ -62,24 +77,27 @@ async function loadPhoto(
   }
 }
 
-/* la photo, CONTENUE dans sa boîte : un cover couperait le
-   meuble — la même règle que la carte de la carrousel. */
+/* la photo CONTENUE, bornée à maxW de large ; centrée dans
+   la case pleine — un cover couperait le meuble, un contain
+   passé 190mm le rendrait minuscule dans une case trop
+   large. */
 function placeContained(
   doc: jsPDF,
   data: string,
   ratio: number,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
+  fullX: number,
+  fullY: number,
+  fullW: number,
+  fullH: number,
+  maxW = fullW,
 ) {
-  let iw = w;
-  let ih = iw / ratio;
-  if (ih > h) {
-    ih = h;
-    iw = ih * ratio;
+  let ih = fullH;
+  let iw = ih * ratio;
+  if (iw > maxW) {
+    iw = maxW;
+    ih = iw / ratio;
   }
-  doc.addImage(data, "JPEG", x + (w - iw) / 2, y + (h - ih) / 2, iw, ih);
+  doc.addImage(data, "JPEG", fullX + (fullW - iw) / 2, fullY, iw, ih);
 }
 
 /* ── les pictos du bloc client ──────────────────────────────
@@ -173,13 +191,14 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   if (logo) {
-    doc.addImage(logo.data, "JPEG", LEFT, 6, 20, 20);
+    doc.addImage(logo.data, "JPEG", LEFT, 5, 20, 20);
     doc.setFontSize(15);
-    doc.text("Missaha DECO", LEFT + 26, 13);
+    doc.text("Missaha DECO", LEFT + 26, 12);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(INK_SOFT);
-    doc.text(`${SITE.brandAr} · ${SITE.category}`, LEFT + 26, 19);
+    doc.text(SITE.category, LEFT + 26, 18);
+    doc.text(`Tél : ${pdfPhone(SITE.whatsappIntl)}`, LEFT + 26, 24);
   } else {
     doc.setFontSize(15);
     doc.text("Missaha DECO", LEFT, 12);
@@ -187,12 +206,8 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
     doc.setFontSize(9);
     doc.setTextColor(INK_SOFT);
     doc.text(SITE.category, LEFT, 18);
+    doc.text(`Tél : ${pdfPhone(SITE.whatsappIntl)}`, LEFT, 24);
   }
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(INK_SOFT);
-  doc.text(`Tél : ${SITE.whatsappDisplay}`, LEFT, 27);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
@@ -218,7 +233,7 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
 
   /* ── le client ───────────────────────────────────────────── */
   y = clientRow(doc, iconPerson, "Client", [q.customer.fullName], LEFT, y);
-  y = clientRow(doc, iconPhone, "Numéro", [q.customer.phone], LEFT, y);
+  y = clientRow(doc, iconPhone, "Numéro", [pdfPhone(q.customer.phone)], LEFT, y);
   const address = `${q.customer.address}, ${q.customer.commune} — ${q.wilayaName}`;
   const addressWrap = doc.splitTextToSize(address, RIGHT - LEFT - 40);
   y = clientRow(doc, iconPin, "Adresse", addressWrap, LEFT, y);
@@ -231,10 +246,12 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
 
   /* ── le panneau des photos ─────────────────────────────────
      Chaque produit prend sa carte : pastille nom à l'orange
-     profond, dimensions du catalogue SOUS la pastille quand
-     il les porte, case photo crème en dessous. Le cadre
-     pointillé est posé PAR PAGE occupée — un cadre unique
-     d'une page de plus tirerait jusqu'à la suivante. */
+     profond, dimensions SOUS la pastille quand le catalogue
+     les porte, photo en dessous — bornée à 120mm pour que
+     la pièce garde sa taille à portée d'œil dans une case
+     pleine largeur. Le cadre pointillé est posé PAR PAGE
+     occupée — un cadre unique d'une page de plus tirerait
+     jusqu'à la suivante. */
   const slots: PhotoSlot[] = [];
   const segments: PanelSegment[] = [];
   let page = pageOf();
@@ -244,8 +261,8 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
   for (const it of q.items) {
     const chipH = 6;
     const dims = (it.dimensions || "").trim();
-    const boxH = 42;
-    if (y + boxH + 4 > 276) {
+    const PH = 52;
+    if (y + PH + 6 > 280) {
       /* la page est pleine : le segment courant se ferme là,
          AVANT d'ouvrir la page neuve — sinon ses bornes
          suivraient y de la page 2 */
@@ -256,11 +273,9 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
       page = pageOf();
       seg = { page, top: y, bottom: y };
     }
-    y += 5;
+    y += 4;
 
-    /* pastille nom — la police est réglée AVANT la mesure,
-       sinon la largeur mesurée ne dit pas la même chose que
-       le texte posé */
+    /* pastille nom — la police est réglée AVANT la mesure */
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     const label = it.name.length > 26 ? `${it.name.slice(0, 25)}…` : it.name;
@@ -275,28 +290,33 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
       doc.text(`× ${it.quantity}`, RIGHT, y + chipH - 1.8, { align: "right" });
     }
 
-    const dimsY = y + chipH + 3.6;
+    const dimsY = y + chipH + 3.8;
     doc.setFont("helvetica", "normal");
     doc.setTextColor(INK);
     doc.setFontSize(10.5);
     if (dims) doc.text(dims, LEFT + 1, dimsY);
 
-    /* la case photo, crème et bordée */
-    const boxTop = y + chipH + (dims ? 6 : 2.5);
-    const boxH2 = boxH - (boxTop - y) - 2;
+    /* la case photo, crème et bordée, sous la pastille */
+    const boxTop = y + chipH + (dims ? 5.5 : 2.5);
+    const boxH = y + PH - boxTop;
     doc.setFillColor(PAPER);
     doc.setDrawColor(LINE);
     doc.setLineWidth(0.4);
-    doc.roundedRect(LEFT, boxTop, RIGHT - LEFT, boxH2, 4, 4, "FD");
+    doc.roundedRect(LEFT, boxTop, RIGHT - LEFT, boxH, 4, 4, "FD");
 
     if (it.image) {
       slots.push({
         page,
-        box: [LEFT + 3, boxTop + 2, RIGHT - LEFT - 6, boxH2 - 4],
+        box: [LEFT + 4, boxTop + 2, RIGHT - LEFT - 8, boxH - 4],
         src: it.image,
       });
+    } else {
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK_SOFT);
+      doc.setFontSize(9);
+      doc.text("Vue du produit sur decoration-meuble.vercel.app", MID, boxTop + boxH / 2 + 1, { align: "center" });
     }
-    y = boxTop + boxH2 + 6;
+    y = boxTop + boxH + 7;
     seg.bottom = y - 2;
   }
   segments.push(seg);
@@ -318,32 +338,46 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
     const photo = await loadPhoto(slot.src);
     if (!photo) continue;
     doc.setPage(slot.page);
-    placeContained(doc, photo.data, photo.ratio, ...slot.box);
+    placeContained(doc, photo.data, photo.ratio, ...slot.box, 120);
   }
   doc.setPage(segments[segments.length - 1].page);
   y = segments[segments.length - 1].bottom;
 
-  /* ── le tableau ──────────────────────────────────────────── */
+  /* ── le tableau ────────────────────────────────────────────
+     Une ligne du tableau mesure CE QUE LE TEXTE occupe :
+     nom et détails sont mesurés, l'épaisseur de la rangée
+     suit, et la séparation ne mord plus sur la suivante. */
   const tableHead = (yy: number) => {
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
     doc.setFontSize(9.5);
     doc.text("DÉSIGNATION", LEFT, yy, { charSpace: 0.35 });
-    doc.text("DÉTAILS", 78, yy, { charSpace: 0.35 });
+    doc.text("DÉTAILS", 80, yy, { charSpace: 0.35 });
     doc.text("PRIX", RIGHT, yy, { align: "right", charSpace: 0.35 });
     doc.setDrawColor(INK);
     doc.setLineWidth(0.5);
     doc.line(LEFT - 2, yy + 3, RIGHT + 2, yy + 3);
   };
   y += 10;
-  if (y > 262) {
+  if (y > 258) {
     doc.addPage();
     y = 22;
   }
   tableHead(y);
   y += 10;
   for (const it of q.items) {
-    if (y > 264) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    const nameCell = it.quantity > 1 ? `${it.name} (× ${it.quantity})` : it.name;
+    const nameLines = doc.splitTextToSize(nameCell, 60);
+    const detail = [it.color, (it.dimensions || "").trim()]
+      .filter(Boolean)
+      .join(" — ");
+    doc.setFontSize(10);
+    doc.setTextColor(INK_SOFT);
+    const detailLines = doc.splitTextToSize(detail || "—", 88);
+    const rowH = Math.max(9.5, 4.6 * nameLines.length + 2, 4.6 * detailLines.length + 2);
+    if (y + rowH > 272) {
       doc.addPage();
       y = 22;
       tableHead(y);
@@ -352,23 +386,19 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10.5);
     doc.setTextColor(INK);
-    const nameCell = it.quantity > 1 ? `${it.name} (× ${it.quantity})` : it.name;
-    doc.text(doc.splitTextToSize(nameCell, 58), LEFT, y + 4.4);
-    const detail = [it.color, (it.dimensions || "").trim()]
-      .filter(Boolean)
-      .join(" — ");
+    doc.text(nameLines, LEFT, y + 4.4);
     doc.setFontSize(10);
     doc.setTextColor(INK_SOFT);
-    doc.text(doc.splitTextToSize(detail || "—", 92), 78, y + 4.4);
+    doc.text(detailLines, 80, y + 4.4);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
-    doc.text(formatDA(it.unitPrice * it.quantity), RIGHT, y + 4.4, {
+    doc.text(pdfDA(it.unitPrice * it.quantity), RIGHT, y + 4.4, {
       align: "right",
     });
     doc.setDrawColor(LINE);
     doc.setLineWidth(0.4);
-    doc.line(LEFT - 2, y + 8.4, RIGHT + 2, y + 8.4);
-    y += 9.5;
+    doc.line(LEFT - 2, y + rowH - 1.1, RIGHT + 2, y + rowH - 1.1);
+    y += rowH;
   }
 
   /* la livraison, à la suite, façon ligne du modèle */
@@ -383,14 +413,14 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
       yy + 4.4,
     );
     doc.setFont("helvetica", "bold");
-    doc.text(formatDA(q.deliveryPrice), RIGHT, yy + 4.4, { align: "right" });
+    doc.text(pdfDA(q.deliveryPrice), RIGHT, yy + 4.4, { align: "right" });
   };
-  if (y > 268) {
+  if (y > 266) {
     doc.addPage();
     y = 22;
   }
   deliveryRow(y);
-  y += 9;
+  y += 10;
 
   /* ── le total, en bandeau jaune doux ──────────────────────── */
   if (y > 276) {
@@ -407,7 +437,7 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
   doc.text("Total avec livraison", LEFT + 2.5, y + 9.7);
   doc.setFontSize(19);
   doc.setTextColor(ORANGE_DEEP);
-  doc.text(formatDA(q.total), RIGHT - 2.5, y + 10.2, { align: "right" });
+  doc.text(pdfDA(q.total), RIGHT - 2.5, y + 10.2, { align: "right" });
   y += 20;
 
   /* ── le bas de page ──────────────────────────────────────── */
@@ -423,7 +453,7 @@ async function buildQuotePdf(q: Quote): Promise<jsPDF> {
   doc.line(footX + footW + 3, y + 2.4, footX + footW + 9, y + 2.4);
   doc.text(foot, MID, y + 3, { align: "center" });
   doc.setFontSize(7.5);
-  doc.text("Missaha DECO · مساحة · Alger, Algérie", MID, y + 8, { align: "center" });
+  doc.text("Missaha DECO · Alger, Algérie", MID, y + 8, { align: "center" });
 
   return doc;
 }
